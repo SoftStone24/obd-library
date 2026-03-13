@@ -511,7 +511,7 @@ export default function RefBoard() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0c0c0e", fontFamily: "'DM Mono', 'Courier New', monospace", color: "#e8e8e8" }}>
+    <div style={{ minHeight: "100vh", background: "#0c0c0e", fontFamily: "'BlenderPro', monospace", color: "#e8e8e8" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
