@@ -174,19 +174,59 @@ function PinCard({ pin, onEnlarge, onDelete }) {
 function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
   const accent = tagAccents[group.tag] || "#e94560";
   const [showAdd, setShowAdd] = useState(false);
-  const [files, setFiles] = useState([]);        // array of { file, preview, note }
+  const [files, setFiles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
+  const [globalDrag, setGlobalDrag] = useState(false); // ← full page overlay
   const [enlarged, setEnlarged] = useState(null);
   const [pinSearch, setPinSearch] = useState("");
   const [confirmPin, setConfirmPin] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef();
+  const dragCounter = useRef(0); // track enter/leave on nested elements
 
   const addFiles = (newFiles) => {
     const arr = Array.from(newFiles).map(f => ({ file: f, preview: URL.createObjectURL(f), note: "" }));
     setFiles(prev => [...prev, ...arr]);
   };
+
+  // ── Global page drag listeners ──────────────────────────
+  useEffect(() => {
+    const onDragEnter = (e) => {
+      e.preventDefault();
+      // Only react to file drags, not element drags
+      if (e.dataTransfer?.types?.includes("Files")) {
+        dragCounter.current += 1;
+        if (dragCounter.current === 1) setGlobalDrag(true);
+      }
+    };
+    const onDragLeave = (e) => {
+      e.preventDefault();
+      dragCounter.current -= 1;
+      if (dragCounter.current === 0) setGlobalDrag(false);
+    };
+    const onDragOver = (e) => e.preventDefault();
+    const onDrop = (e) => {
+      e.preventDefault();
+      dragCounter.current = 0;
+      setGlobalDrag(false);
+      const dropped = e.dataTransfer?.files;
+      if (dropped?.length) {
+        addFiles(dropped);
+        setShowAdd(true);
+      }
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, []);
 
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false);
@@ -236,6 +276,27 @@ function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0c0c0e" }}>
+
+      {/* ── GLOBAL DRAG OVERLAY ── */}
+      {globalDrag && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 500,
+          background: "rgba(0,0,0,0.85)",
+          border: `3px dashed ${accent}`,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          gap: 16, pointerEvents: "none",
+          animation: "fadeIn 0.15s ease"
+        }}>
+          <div style={{ fontSize: 48 }}>↓</div>
+          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 24, fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
+            Drop to add pins
+          </div>
+          <div style={{ fontSize: 12, color: accent, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+            {group.name}
+          </div>
+        </div>
+      )}
       <div style={{ padding: "16px 32px", borderBottom: "1px solid #1a1a1e", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <button onClick={onBack} style={{ background: "none", border: "1px solid #222", color: "#666", padding: "6px 14px", fontSize: 10, fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.1em" }}>← Back</button>
         <div style={{ flex: 1 }}>
@@ -458,6 +519,7 @@ export default function RefBoard() {
         ::-webkit-scrollbar-thumb { background: #2a2a2e; }
         .filter-select { background: #111115; color: #888; border: 1px solid #1e1e24; padding: 5px 10px; font-family: inherit; font-size: 10px; cursor: pointer; outline: none; }
         @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:none; } }
+        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
       `}</style>
 
       <header style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 32px", borderBottom: "1px solid #1a1a1e", position: "sticky", top: 0, zIndex: 100, background: "#0c0c0e" }}>
