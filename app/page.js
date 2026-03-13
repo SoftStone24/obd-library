@@ -174,55 +174,63 @@ function PinCard({ pin, onEnlarge, onDelete }) {
 function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
   const accent = tagAccents[group.tag] || "#e94560";
   const [showAdd, setShowAdd] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [newFile, setNewFile] = useState(null);
-  const [newPreview, setNewPreview] = useState("");
+  const [files, setFiles] = useState([]);        // array of { file, preview, note }
   const [dragOver, setDragOver] = useState(false);
   const [enlarged, setEnlarged] = useState(null);
   const [pinSearch, setPinSearch] = useState("");
   const [confirmPin, setConfirmPin] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef();
+
+  const addFiles = (newFiles) => {
+    const arr = Array.from(newFiles).map(f => ({ file: f, preview: URL.createObjectURL(f), note: "" }));
+    setFiles(prev => [...prev, ...arr]);
+  };
 
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false);
-    const file = e.dataTransfer?.files[0] || e.target.files?.[0];
-    if (file) { setNewFile(file); setNewPreview(URL.createObjectURL(file)); }
+    const dropped = e.dataTransfer?.files || e.target.files;
+    if (dropped?.length) addFiles(dropped);
   };
+
+  const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
+  const updateNote = (i, note) => setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, note } : f));
 
   const visiblePins = pinSearch.trim()
     ? group.pins.filter(p => p.note?.toLowerCase().includes(pinSearch.toLowerCase()))
     : group.pins;
 
-  const handleAddPin = async () => {
-    if (!newFile) return;
+  const handleUploadAll = async () => {
+    if (!files.length) return;
     setUploading(true);
-    try {
-      // 1. Upload image to Supabase Storage
-      const filename = `${Date.now()}-${newFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from('OBD Library')
-        .upload(filename, newFile);
-      if (uploadError) throw uploadError;
-
-      // 2. Get public URL
-      const { data: urlData } = supabase.storage
-        .from('OBD Library')
-        .getPublicUrl(filename);
-
-      // 3. Save pin to database
-      const { data, error } = await supabase
-        .from('pins')
-        .insert([{ group_id: group.id, image_url: urlData.publicUrl, note: newNote }])
-        .select()
-        .single();
-      if (error) throw error;
-
-      onAddPin(group.id, data);
-      setNewFile(null); setNewPreview(""); setNewNote(""); setShowAdd(false);
-    } catch (err) {
-      alert("Upload failed: " + err.message);
+    setUploadProgress({ done: 0, total: files.length });
+    const uploaded = [];
+    for (let i = 0; i < files.length; i++) {
+      const { file, note } = files[i];
+      try {
+        const filename = `${Date.now()}-${i}-${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('OBD Library')
+          .upload(filename, file);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage
+          .from('OBD Library')
+          .getPublicUrl(filename);
+        const { data, error } = await supabase
+          .from('pins')
+          .insert([{ group_id: group.id, image_url: urlData.publicUrl, note }])
+          .select().single();
+        if (error) throw error;
+        uploaded.push(data);
+      } catch (err) {
+        console.error(`Failed: ${file.name}`, err.message);
+      }
+      setUploadProgress({ done: i + 1, total: files.length });
     }
+    uploaded.forEach(pin => onAddPin(group.id, pin));
+    setFiles([]);
+    setShowAdd(false);
     setUploading(false);
   };
 
@@ -246,7 +254,7 @@ function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
             style={{ background: "none", border: "none", outline: "none", color: "#e8e8e8", fontSize: 11, fontFamily: "inherit", flex: 1 }} />
           {pinSearch && <button onClick={() => setPinSearch("")} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>}
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ background: "transparent", border: `1px solid ${accent}`, color: accent, padding: "8px 18px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>+ Add Pin</button>
+        <button onClick={() => setShowAdd(true)} style={{ background: "transparent", border: `1px solid ${accent}`, color: accent, padding: "8px 18px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>+ Add Pins</button>
       </div>
 
       {visiblePins.length > 0 ? (
@@ -282,32 +290,74 @@ function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
       )}
 
       {showAdd && (
-        <div onClick={() => setShowAdd(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#111115", border: "1px solid #2a2a2e", width: "100%", maxWidth: 440, padding: 28 }}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, marginBottom: 20, color: "#fff" }}>
-              Add Pin to <span style={{ color: accent }}>{group.name}</span>
+        <div onClick={() => { if (!uploading) { setShowAdd(false); setFiles([]); }}} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#111115", border: "1px solid #2a2a2e", width: "100%", maxWidth: 620, maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+            {/* Modal header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #1a1a1e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>
+                Add Pins to <span style={{ color: accent }}>{group.name}</span>
+              </div>
+              {files.length > 0 && !uploading && (
+                <span style={{ fontSize: 10, color: "#555" }}>{files.length} image{files.length > 1 ? "s" : ""} selected</span>
+              )}
             </div>
+
+            {/* Drop zone */}
             <div
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
-              onClick={() => fileRef.current.click()}
-              style={{ border: `2px dashed ${dragOver ? accent : "#2a2a2e"}`, padding: 24, textAlign: "center", cursor: "pointer", marginBottom: 16, background: dragOver ? "#1a0e10" : "#0d0d10", transition: "all 0.2s", minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleDrop} />
-              {newPreview
-                ? <img src={newPreview} alt="preview" style={{ maxHeight: 120, maxWidth: "100%" }} />
-                : <div style={{ fontSize: 11, color: "#444", letterSpacing: "0.1em" }}>↑ DROP IMAGE OR CLICK</div>
-              }
+              onClick={() => !uploading && fileRef.current.click()}
+              style={{ margin: "16px 24px 0", border: `2px dashed ${dragOver ? accent : "#2a2a2e"}`, padding: "20px", textAlign: "center", cursor: uploading ? "default" : "pointer", background: dragOver ? "#1a0e10" : "#0d0d10", transition: "all 0.2s" }}>
+              <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleDrop} />
+              <div style={{ fontSize: 20, marginBottom: 6 }}>↑</div>
+              <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em" }}>DROP IMAGES OR CLICK TO SELECT</div>
+              <div style={{ fontSize: 9, color: "#333", marginTop: 4 }}>You can select multiple images at once</div>
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 9, color: "#555", letterSpacing: "0.2em", marginBottom: 6 }}>NOTE (optional)</div>
-              <input value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Short description..."
-                style={{ width: "100%", background: "#151518", border: "1px solid #222", color: "#e8e8e8", padding: "8px 12px", fontSize: 11, fontFamily: "inherit", outline: "none" }} />
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setShowAdd(false)} style={{ flex: 1, background: "none", border: "1px solid #222", color: "#555", padding: "9px", fontSize: 10, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
-              <button onClick={handleAddPin} disabled={!newFile || uploading} style={{ flex: 2, background: newFile && !uploading ? accent : "#1e1a1a", border: "none", color: newFile && !uploading ? "#fff" : "#555", padding: "9px", fontSize: 10, fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                {uploading ? "Uploading..." : "Add Pin"}
+
+            {/* Image previews list */}
+            {files.length > 0 && (
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {files.map((f, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", background: "#0d0d10", border: "1px solid #1e1e24", padding: 10 }}>
+                    <img src={f.preview} alt="" style={{ width: 60, height: 60, objectFit: "cover", flexShrink: 0, border: "1px solid #222" }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 10, color: "#666", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.file.name}</div>
+                      <input
+                        value={f.note}
+                        onChange={e => updateNote(i, e.target.value)}
+                        placeholder="Note (optional)"
+                        disabled={uploading}
+                        style={{ width: "100%", background: "#151518", border: "1px solid #222", color: "#e8e8e8", padding: "6px 10px", fontSize: 10, fontFamily: "inherit", outline: "none" }}
+                      />
+                    </div>
+                    {!uploading && (
+                      <button onClick={() => removeFile(i)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 18, padding: "0 4px", flexShrink: 0 }}>×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload progress bar */}
+            {uploading && (
+              <div style={{ padding: "12px 24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, color: "#666" }}>Uploading...</span>
+                  <span style={{ fontSize: 10, color: accent }}>{uploadProgress.done} / {uploadProgress.total}</span>
+                </div>
+                <div style={{ background: "#1a1a1e", height: 3 }}>
+                  <div style={{ background: accent, height: "100%", width: `${(uploadProgress.done / uploadProgress.total) * 100}%`, transition: "width 0.3s ease" }} />
+                </div>
+              </div>
+            )}
+
+            {/* Footer buttons */}
+            <div style={{ padding: "12px 24px 20px", borderTop: "1px solid #1a1a1e", display: "flex", gap: 8 }}>
+              <button onClick={() => { if (!uploading) { setShowAdd(false); setFiles([]); }}} disabled={uploading} style={{ flex: 1, background: "none", border: "1px solid #222", color: "#555", padding: "9px", fontSize: 10, fontFamily: "inherit", cursor: uploading ? "default" : "pointer" }}>Cancel</button>
+              <button onClick={handleUploadAll} disabled={!files.length || uploading} style={{ flex: 2, background: files.length && !uploading ? accent : "#1e1a1a", border: "none", color: files.length && !uploading ? "#fff" : "#555", padding: "9px", fontSize: 10, fontFamily: "inherit", cursor: files.length && !uploading ? "pointer" : "default", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                {uploading ? `Uploading ${uploadProgress.done}/${uploadProgress.total}...` : `Upload ${files.length > 0 ? files.length : ""} Pin${files.length !== 1 ? "s" : ""}`}
               </button>
             </div>
           </div>
