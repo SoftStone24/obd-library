@@ -1,6 +1,6 @@
 "use client";
 import { supabase } from '../../../lib/supabase';
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, use } from "react";
 import { useRouter } from 'next/navigation';
 
 const tagAccents = {
@@ -339,12 +339,12 @@ function GroupDetail({ group, onBack, onAddPin, onDeletePin }) {
 
 export default function GroupPage({ params }) {
   const router = useRouter();
+  const { id } = use(params);
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadGroup() {
-      const id = params.id;
       const { data: groupData, error: gErr } = await supabase
         .from('groups')
         .select('*')
@@ -366,7 +366,7 @@ export default function GroupPage({ params }) {
       setLoading(false);
     }
     loadGroup();
-  }, [params.id]);
+  }, [id]);
 
   const handleAddPin = (groupId, pin) => {
     setGroup(prev => ({ ...prev, pins: [...prev.pins, pin] }));
