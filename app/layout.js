@@ -1,4 +1,5 @@
 import "./globals.css";
+import SwipeNav from "./SwipeNav";
 
 export const metadata = {
   title: "OBD.LIBRARY",
@@ -8,7 +9,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SwipeNav>{children}</SwipeNav>
+      </body>
     </html>
   );
 }
